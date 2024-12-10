@@ -1,0 +1,344 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondary,
+  IconButton,
+  Typography,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Chip,
+  Tooltip,
+  CircularProgress,
+} from '@mui/material';
+import {
+  History as HistoryIcon,
+  CompareArrows as CompareIcon,
+  Restore as RestoreIcon,
+  Download as DownloadIcon,
+  Upload as UploadIcon,
+} from '@mui/icons-material';
+import { format } from 'date-fns';
+import { useSnackbar } from 'notistack';
+import api from '../../services/api';
+import { DiffViewer } from '../Common/DiffViewer';
+
+interface Version {
+  id: string;
+  version_number: number;
+  created_by: {
+    id: number;
+    username: string;
+  };
+  created_at: string;
+  file_size: number;
+  change_description: string;
+  is_current: boolean;
+}
+
+export const DocumentVersions: React.FC<{ documentId: string }> = ({ documentId }) => {
+  const [versions, setVersions] = useState<Version[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [compareDialogOpen, setCompareDialogOpen] = useState(false);
+  const [selectedVersions, setSelectedVersions] = useState<[string?, string?]>([]);
+  const [changeDescription, setChangeDescription] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [diffContent, setDiffContent] = useState<{ old: string; new: string }>({
+    old: '',
+    new: '',
+  });
+  const { enqueueSnackbar } = useSnackbar();
+
+  useEffect(() => {
+    loadVersions();
+  }, [documentId]);
+
+  const loadVersions = async () => {
+    try {
+      const response = await api.get(`/documents/${documentId}/versions`);
+      setVersions(response.data);
+    } catch (error) {
+      console.error('Error loading versions:', error);
+      enqueueSnackbar('Error loading versions', { variant: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      setSelectedFile(event.target.files[0]);
+    }
+  };
+
+  const handleUploadVersion = async () => {
+    if (!selectedFile || !changeDescription) return;
+
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('change_description', changeDescription);
+
+      await api.post(`/documents/${documentId}/versions`, formData);
+      loadVersions();
+      setUploadDialogOpen(false);
+      resetUploadForm();
+      enqueueSnackbar('New version uploaded successfully', { variant: 'success' });
+    } catch (error) {
+      console.error('Error uploading version:', error);
+      enqueueSnackbar('Error uploading version', { variant: 'error' });
+    }
+  };
+
+  const handleCompareVersions = async () => {
+    if (selectedVersions.length !== 2) return;
+
+    try {
+      const response = await api.get(`/documents/${documentId}/versions/compare`, {
+        params: {
+          version1: selectedVersions[0],
+          version2: selectedVersions[1],
+        },
+      });
+      setDiffContent(response.data);
+      setCompareDialogOpen(true);
+    } catch (error) {
+      console.error('Error comparing versions:', error);
+      enqueueSnackbar('Error comparing versions', { variant: 'error' });
+    }
+  };
+
+  const handleRestoreVersion = async (versionId: string) => {
+    try {
+      await api.post(`/documents/${documentId}/versions/${versionId}/restore`);
+      loadVersions();
+      enqueueSnackbar('Version restored successfully', { variant: 'success' });
+    } catch (error) {
+      console.error('Error restoring version:', error);
+      enqueueSnackbar('Error restoring version', { variant: 'error' });
+    }
+  };
+
+  const handleDownloadVersion = async (versionId: string) => {
+    try {
+      const response = await api.get(
+        `/documents/${documentId}/versions/${versionId}/download`,
+        { responseType: 'blob' }
+      );
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `document_v${versionId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      console.error('Error downloading version:', error);
+      enqueueSnackbar('Error downloading version', { variant: 'error' });
+    }
+  };
+
+  const resetUploadForm = () => {
+    setSelectedFile(null);
+    setChangeDescription('');
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+    return (
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+        <Typography variant="h6">Version History</Typography>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<CompareIcon />}
+            disabled={selectedVersions.length !== 2}
+            onClick={handleCompareVersions}
+          >
+            Compare Selected
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<UploadIcon />}
+            onClick={() => setUploadDialogOpen(true)}
+          >
+            Upload New Version
+          </Button>
+        </Box>
+      </Box>
+
+      <List>
+        {versions.map((version) => (
+          <ListItem
+            key={version.id}
+            sx={{
+              border: 1,
+              borderColor: 'divider',
+              borderRadius: 1,
+              mb: 1,
+              bgcolor: version.is_current ? 'action.selected' : 'background.paper',
+            }}
+          >
+            <ListItemText
+              primary={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="subtitle1">
+                    Version {version.version_number}
+                  </Typography>
+                  {version.is_current && (
+                    <Chip label="Current" size="small" color="primary" />
+                  )}
+                </Box>
+              }
+              secondary={
+                <>
+                  <Typography variant="body2" color="textSecondary">
+                    {version.change_description}
+                  </Typography>
+                  <Typography variant="caption" display="block">
+                    Created by {version.created_by.username} on{' '}
+                    {format(new Date(version.created_at), 'dd/MM/yyyy HH:mm')}
+                  </Typography>
+                  <Typography variant="caption" color="textSecondary">
+                    Size: {formatFileSize(version.file_size)}
+                  </Typography>
+                </>
+              }
+            />
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Tooltip title="Select for comparison">
+                <IconButton
+                  onClick={() => {
+                    if (selectedVersions.includes(version.id)) {
+                      setSelectedVersions(selectedVersions.filter(v => v !== version.id));
+                    } else if (selectedVersions.length < 2) {
+                      setSelectedVersions([...selectedVersions, version.id]);
+                    }
+                  }}
+                  color={selectedVersions.includes(version.id) ? 'primary' : 'default'}
+                >
+                  <HistoryIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Download version">
+                <IconButton onClick={() => handleDownloadVersion(version.id)}>
+                  <DownloadIcon />
+                </IconButton>
+              </Tooltip>
+              {!version.is_current && (
+                <Tooltip title="Restore this version">
+                  <IconButton onClick={() => handleRestoreVersion(version.id)}>
+                    <RestoreIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
+          </ListItem>
+        ))}
+      </List>
+
+      {/* Upload Dialog */}
+      <Dialog
+        open={uploadDialogOpen}
+        onClose={() => {
+          setUploadDialogOpen(false);
+          resetUploadForm();
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Upload New Version</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+            <Button
+              variant="outlined"
+              component="label"
+              startIcon={<UploadIcon />}
+            >
+              Select File
+              <input
+                type="file"
+                hidden
+                onChange={handleFileSelect}
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+              />
+            </Button>
+            {selectedFile && (
+              <Typography variant="body2" color="textSecondary">
+                Selected: {selectedFile.name} ({formatFileSize(selectedFile.size)})
+              </Typography>
+            )}
+            <TextField
+              label="Change Description"
+              fullWidth
+              multiline
+              rows={3}
+              value={changeDescription}
+              onChange={(e) => setChangeDescription(e.target.value)}
+              required
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setUploadDialogOpen(false);
+              resetUploadForm();
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleUploadVersion}
+            disabled={!selectedFile || !changeDescription}
+          >
+            Upload
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Compare Dialog */}
+      <Dialog
+        open={compareDialogOpen}
+        onClose={() => setCompareDialogOpen(false)}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogTitle>Compare Versions</DialogTitle>
+        <DialogContent>
+          <DiffViewer
+            oldContent={diffContent.old}
+            newContent={diffContent.new}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCompareDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+};
