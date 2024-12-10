@@ -1,0 +1,165 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  TextField,
+  Autocomplete,
+  Chip,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Box,
+  Typography,
+  Switch,
+} from '@mui/material';
+import api from '../../services/api';
+
+interface ShareSettings {
+  userId: string;
+  permission: 'view' | 'edit' | 'admin';
+  expiresAt?: Date;
+}
+
+export const DocumentShare: React.FC<{
+  documentId: string;
+  open: boolean;
+  onClose: () => void;
+}> = ({ documentId, open, onClose }) => {
+  const [users, setUsers] = useState<any[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [shareSettings, setShareSettings] = useState<ShareSettings[]>([]);
+  const [publicLink, setPublicLink] = useState<string>('');
+  const [isPublic, setIsPublic] = useState(false);
+
+  useEffect(() => {
+    loadUsers();
+    loadShareSettings();
+  }, [documentId]);
+
+  const loadUsers = async () => {
+    const response = await api.get('/users');
+    setUsers(response.data);
+  };
+
+  const loadShareSettings = async () => {
+    const response = await api.get(`/documents/${documentId}/share`);
+    setShareSettings(response.data.settings);
+    setIsPublic(response.data.isPublic);
+    setPublicLink(response.data.publicLink || '');
+  };
+
+  const handleShare = async () => {
+    await api.post(`/documents/${documentId}/share`, {
+      users: selectedUsers,
+      settings: shareSettings,
+      isPublic,
+    });
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>Share Document</DialogTitle>
+      <DialogContent>
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="subtitle1" gutterBottom>
+            Public Access
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Switch
+              checked={isPublic}
+              onChange={(e) => setIsPublic(e.target.checked)}
+            />
+            <Typography>Allow anyone with the link to view</Typography>
+          </Box>
+          {isPublic && publicLink && (
+            <TextField
+              fullWidth
+              value={publicLink}
+              margin="normal"
+              InputProps={{
+                readOnly: true,
+                endAdornment: (
+                  <Button
+                    onClick={() => navigator.clipboard.writeText(publicLink)}
+                  >
+                    Copy
+                  </Button>
+                ),
+              }}
+            />
+          )}
+        </Box>
+
+        <Autocomplete
+          multiple
+          options={users}
+          getOptionLabel={(option) => option.username}
+          onChange={(_, value) => {
+            setSelectedUsers(value.map((v) => v.id));
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="Add people"
+              placeholder="Search users..."
+            />
+          )}
+          renderTags={(value, getTagProps) =>
+            value.map((option, index) => (
+              <Chip
+                label={option.username}
+                {...getTagProps({ index })}
+                size="small"
+              />
+            ))
+          }
+        />
+
+        <List>
+          {shareSettings.map((setting) => (
+            <ListItem key={setting.userId}>
+              <ListItemText
+                primary={users.find((u) => u.id === setting.userId)?.username}
+              />
+              <ListItemSecondaryAction>
+                <FormControl size="small">
+                  <Select
+                    value={setting.permission}
+                    onChange={(e) =>
+                      setShareSettings(
+                        shareSettings.map((s) =>
+                          s.userId === setting.userId
+                            ? { ...s, permission: e.target.value }
+                            : s
+                        )
+                      )
+                    }
+                  >
+                    <MenuItem value="view">View</MenuItem>
+                    <MenuItem value="edit">Edit</MenuItem>
+                    <MenuItem value="admin">Admin</MenuItem>
+                  </Select>
+                </FormControl>
+              </ListItemSecondaryAction>
+            </ListItem>
+          ))}
+        </List>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={handleShare} variant="contained" color="primary">
+          Share
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
