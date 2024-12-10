@@ -1,0 +1,180 @@
+import crypto from 'crypto';
+import { promisify } from 'util';
+import { config } from '../config/environment';
+
+export class EncryptionService {
+  private static readonly algorithm = 'aes-256-gcm';
+  private static readonly ivLength = 16;
+  private static readonly saltLength = 64;
+  private static readonly tagLength = 16;
+  private static readonly keyLength = 32;
+  private static readonly digest = 'sha256';
+
+  /**
+   * Gera uma chave a partir de senha e salt
+   * @param password Senha para derivação da chave
+   * @param salt Salt aleatório
+   */
+  private static async generateKey(
+    password: string,
+    salt: Buffer
+  ): Promise<Buffer> {
+    const pbkdf2 = promisify(crypto.pbkdf2);
+    return pbkdf2(
+      password,
+      salt,
+      100000, // Número de iterações
+      this.keyLength,
+      this.digest
+    );
+  }
+
+  /**
+   * Criptografa dados
+   * @param data Dados a serem criptografados
+   * @param password Senha para criptografia
+   */
+  static async encrypt(data: Buffer, password: string): Promise<Buffer> {
+    try {
+      // Gera salt aleatório
+      const salt = crypto.randomBytes(this.saltLength);
+      
+      // Gera IV (Vetor de Inicialização) aleatório
+      const iv = crypto.randomBytes(this.ivLength);
+      
+      // Deriva a chave da senha
+      const key = await this.generateKey(password, salt);
+      
+      // Cria cipher
+      const cipher = crypto.createCipheriv(
+        this.algorithm,
+        key,
+        iv
+      );
+
+      // Criptografa os dados
+      const encrypted = Buffer.concat([
+        cipher.update(data),
+        cipher.final()
+      ]);
+
+      // Obtém tag de autenticação
+      const tag = cipher.getAuthTag();
+
+      // Combina todos os componentes
+      return Buffer.concat([
+        salt,      // Salt para derivação da chave
+        iv,        // Vetor de inicialização
+        tag,       // Tag de autenticação
+        encrypted  // Dados criptografados
+      ]);
+    } catch (error) {
+      console.error('Encryption error:', error);
+      throw new Error('Failed to encrypt data');
+    }
+  }
+
+  /**
+   * Descriptografa dados
+   * @param encryptedData Dados criptografados
+   * @param password Senha para descriptografia
+   */
+  static async decrypt(encryptedData: Buffer, password: string): Promise<Buffer> {
+    try {
+      // Extrai componentes do buffer criptografado
+      const salt = encryptedData.slice(0, this.saltLength);
+      const iv = encryptedData.slice(
+        this.saltLength,
+        this.saltLength + this.ivLength
+      );
+      const tag = encryptedData.slice(
+        this.saltLength + this.ivLength,
+        this.saltLength + this.ivLength + this.tagLength
+      );
+      const encrypted = encryptedData.slice(
+        this.saltLength + this.ivLength + this.tagLength
+      );
+
+      // Deriva a chave
+      const key = await this.generateKey(password, salt);
+
+      // Cria decipher
+      const decipher = crypto.createDecipheriv(
+        this.algorithm,
+        key,
+        iv
+      );
+      
+      // Define a tag de autenticação
+      decipher.setAuthTag(tag);
+
+      // Descriptografa os dados
+      return Buffer.concat([
+        decipher.update(encrypted),
+        decipher.final()
+      ]);
+    } catch (error) {
+      console.error('Decryption error:', error);
+      throw new Error('Failed to decrypt data');
+    }
+  }
+
+  /**
+   * Gera hash de dados
+   * @param data Dados para gerar hash
+   */
+  static async generateHash(data: Buffer): Promise<string> {
+    return crypto
+      .createHash('sha256')
+      .update(data)
+      .digest('hex');
+  }
+
+  /**
+   * Verifica integridade dos dados
+   * @param data Dados originais
+   * @param hash Hash para verificação
+   */
+  static async verifyIntegrity(data: Buffer, hash: string): Promise<boolean> {
+    const calculatedHash = await this.generateHash(data);
+    return calculatedHash === hash;
+  }
+
+  /**
+   * Criptografa dados com chave pública
+   * @param data Dados a serem criptografados
+   * @param publicKey Chave pública
+   */
+  static async encryptWithPublicKey(
+    data: Buffer,
+    publicKey: string
+  ): Promise<Buffer> {
+    return crypto.publicEncrypt(
+      {
+        key: publicKey,
+        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+        oaepHash: 'sha256'
+      },
+      data
+    );
+  }
+
+  /**
+   * Descriptografa dados com chave privada
+   * @param encryptedData Dados criptografados
+   * @param privateKey Chave privada
+   */
+  static async decryptWithPrivateKey(
+    encryptedData: Buffer,
+    privateKey: string
+  ): Promise<Buffer> {
+    return crypto.privateDecrypt(
+      {
+        key: privateKey,
+        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+        oaepHash: 'sha256'
+      },
+      encryptedData
+    );
+  }
+}
