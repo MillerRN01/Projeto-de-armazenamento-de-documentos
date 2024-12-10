@@ -1,0 +1,23 @@
+import { Router } from 'express';
+import authRoutes from './authRoutes';
+import userRoutes from './userRoutes';
+import categoryRoutes from './categoryRoutes';
+import documentRoutes from './documentRoutes';
+import workflowRoutes from './workflowRoutes';
+import { authenticateToken } from '../middleware/auth';
+
+const router = Router();
+
+// Rotas públicas
+router.use('/auth', authRoutes);
+
+// Middleware de autenticação para rotas protegidas
+router.use(authenticateToken);
+
+// Rotas protegidas
+router.use('/users', userRoutes);
+router.use('/categories', categoryRoutes);
+router.use('/documents', documentRoutes);
+router.use('/workflows', workflowRoutes);
+
+export default router;
