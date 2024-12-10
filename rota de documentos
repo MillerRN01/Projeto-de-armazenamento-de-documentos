@@ -1,0 +1,57 @@
+import { Router } from 'express';
+import { DocumentController } from '../controllers/documentController';
+import { upload } from '../middleware/upload';
+import { validateDocument } from '../middleware/validation';
+import { checkPermissions } from '../middleware/permissions';
+
+const router = Router();
+
+router.post('/',
+  upload.single('file'),
+  validateDocument,
+  DocumentController.upload
+);
+
+router.get('/',
+  checkPermissions('read:documents'),
+  DocumentController.search
+);
+
+router.get('/:id',
+  checkPermissions('read:documents'),
+  DocumentController.getById
+);
+
+router.put('/:id',
+  checkPermissions('update:documents'),
+  validateDocument,
+  DocumentController.update
+);
+
+router.delete('/:id',
+  checkPermissions('delete:documents'),
+  DocumentController.delete
+);
+
+router.post('/:id/versions',
+  upload.single('file'),
+  checkPermissions('create:versions'),
+  DocumentController.createVersion
+);
+
+router.get('/:id/versions',
+  checkPermissions('read:versions'),
+  DocumentController.getVersions
+);
+
+router.post('/:id/annotations',
+  checkPermissions('create:annotations'),
+  DocumentController.addAnnotation
+);
+
+router.get('/:id/annotations',
+  checkPermissions('read:annotations'),
+  DocumentController.getAnnotations
+);
+
+export default router;
