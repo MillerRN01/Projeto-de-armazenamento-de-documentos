@@ -1,0 +1,238 @@
+import React, { useState, useRef } from 'react';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  Box,
+  Typography,
+  LinearProgress,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Chip,
+} from '@mui/material';
+import { Upload as UploadIcon, Close as CloseIcon } from '@mui/icons-material';
+import { useDropzone } from 'react-dropzone';
+import api from '../../services/api';
+import { useSnackbar } from 'notistack';
+
+interface DocumentUploadDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+export const DocumentUploadDialog: React.FC<DocumentUploadDialogProps> = ({
+  open,
+  onClose,
+  onSuccess,
+}) => {
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState('');
+  const [description, setDescription] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const { enqueueSnackbar } = useSnackbar();
+  const tagInputRef = useRef<HTMLInputElement>(null);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop: (acceptedFiles) => {
+      if (acceptedFiles.length > 0) {
+        setFile(acceptedFiles[0]);
+        if (!title) {
+          setTitle(acceptedFiles[0].name.split('.').slice(0, -1).join('.'));
+        }
+      }
+    },
+    maxFiles: 1,
+    accept: {
+      'application/pdf': ['.pdf'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/png': ['.png'],
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+    },
+  });
+
+  const handleSubmit = async () => {
+    if (!file || !title || !category) {
+      enqueueSnackbar('Please fill all required fields', { variant: 'error' });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('title', title);
+    formData.append('category', category);
+    formData.append('description', description);
+    formData.append('tags', JSON.stringify(tags));
+
+    setUploading(true);
+
+    try {
+      await api.post('/documents', formData, {
+        onUploadProgress: (progressEvent) => {
+          const percentCompleted = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total!
+          );
+          setProgress(percentCompleted);
+        },
+      });
+
+      onSuccess();
+      resetForm();
+    } catch (error) {
+      enqueueSnackbar('Error uploading document', { variant: 'error' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const resetForm = () => {
+    setTitle('');
+    setCategory('');
+    setDescription('');
+    setTags([]);
+    setFile(null);
+    setProgress(0);
+  };
+
+  const handleAddTag = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter' && tagInputRef.current?.value) {
+      const newTag = tagInputRef.current.value.trim();
+      if (newTag && !tags.includes(newTag)) {
+        setTags([...tags, newTag]);
+        tagInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    setTags(tags.filter(tag => tag !== tagToRemove));
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Upload Document</DialogTitle>
+      <DialogContent>
+        <Box sx={{ mb: 3 }}>
+          <Box
+            {...getRootProps()}
+            sx={{
+              border: '2px dashed',
+              borderColor: isDragActive ? 'primary.main' : 'grey.300',
+              borderRadius: 1,
+              p: 3,
+              textAlign: 'center',
+              cursor: 'pointer',
+              mb: 2,
+            }}
+          >
+            <input {...getInputProps()} />
+            {file ? (
+              <Typography>
+                Selected file: {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
+              </Typography>
+            ) : (
+              <Typography>
+                {isDragActive
+                  ? 'Drop the file here...'
+                  : 'Drag and drop a file here, or click to select'}
+              </Typography>
+            )}
+            <UploadIcon sx={{ fontSize: 40, color: 'grey.500', mt: 1 }} />
+          </Box>
+
+          <TextField
+            label="Title"
+            fullWidth
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
+            sx={{ mb: 2 }}
+          />
+
+          <FormControl fullWidth sx={{ mb: 2 }}>
+            <InputLabel>Category</InputLabel>
+            <Select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              required
+              label="Category"
+            >
+              <MenuItem value="contracts">Contracts</MenuItem>
+              <MenuItem value="invoices">Invoices</MenuItem>
+              <MenuItem value="reports">Reports</MenuItem>
+              <MenuItem value="other">Other</MenuItem>
+            </Select>
+          </FormControl>
+
+          <TextField
+            label="Description"
+            fullWidth
+            multiline
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            sx={{ mb: 2 }}
+          />
+
+          <TextField
+            inputRef={tagInputRef}
+            label="Tags"
+            fullWidth
+            onKeyPress={handleAddTag}
+            helperText="Press Enter to add tags"
+            sx={{ mb: 1 }}
+          />
+
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {tags.map((tag) => (
+              <Chip
+                key={tag}
+                label={tag}
+                onDelete={() => handleRemoveTag(tag)}
+                size="small"
+              />
+            ))}
+          </Box>
+
+          {uploading && (
+            <Box sx={{ mt: 2 }}>
+              <LinearProgress variant="determinate" value={progress} />
+              <Typography variant="body2" color="textSecondary" align="center">
+                {progress}%
+              </Typography>
+            </Box>
+          )}
+        </Box>
+      </DialogContent>
+      <DialogActions>
+        <Button
+          onClick={() => {
+            onClose();
+            resetForm();
+          }}
+          startIcon={<CloseIcon />}
+        >
+          Cancel
+        </Button>
+        <Button
+          onClick={handleSubmit}
+          variant="contained"
+          color="primary"
+          disabled={uploading || !file || !title || !category}
+          startIcon={<UploadIcon />}
+        >
+          Upload
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
