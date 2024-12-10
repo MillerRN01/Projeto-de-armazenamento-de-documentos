@@ -1,0 +1,57 @@
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+import { config } from '../config/environment';
+import { AppError } from './errorHandler';
+import { UserModel } from '../models/User';
+
+export interface AuthRequest extends Request {
+  user?: any;
+}
+
+export const authenticateToken = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+      throw new AppError(401, 'No token provided');
+    }
+
+    const decoded = jwt.verify(token, config.JWT_SECRET) as any;
+    
+    // Verifica se o usuário ainda existe e está ativo
+    const user = await UserModel.findById(decoded.id);
+    if (!user) {
+      throw new AppError(401, 'User no longer exists');
+    }
+
+    // Adiciona usuário ao request
+    req.user = user;
+    
+    next();
+  } catch (error) {
+    if (error instanceof jwt.JsonWebTokenError) {
+      next(new AppError(401, 'Invalid token'));
+    } else {
+      next(error);
+    }
+  }
+};
+
+export const checkRole = (roles: string[]) => {
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      throw new AppError(401, 'Not authenticated');
+    }
+
+    if (!roles.includes(req.user.role)) {
+      throw new AppError(403, 'Insufficient permissions');
+    }
+
+    next();
+  };
+};
