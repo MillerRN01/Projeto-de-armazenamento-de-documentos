@@ -1,0 +1,182 @@
+import React, { useState } from 'react';
+import {
+  Box,
+  AppBar,
+  Toolbar,
+  IconButton,
+  Typography,
+  Drawer,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  useTheme,
+  useMediaQuery,
+  Avatar,
+  Menu,
+  MenuItem,
+  Divider
+} from '@mui/material';
+import {
+  Menu as MenuIcon,
+  ChevronLeft as ChevronLeftIcon,
+  Brightness4 as DarkModeIcon,
+  Brightness7 as LightModeIcon,
+  Person as PersonIcon,
+  ExitToApp as LogoutIcon,
+  Settings as SettingsIcon
+} from '@mui/icons-material';
+import { useAuth } from '../../contexts/AuthContext';
+import { useTheme as useAppTheme } from '../../contexts/ThemeContext';
+import { useNavigate } from 'react-router-dom';
+
+interface MainLayoutProps {
+  children: React.ReactNode;
+  title: string;
+}
+
+const drawerWidth = 240;
+
+export const MainLayout: React.FC<MainLayoutProps> = ({ children, title }) => {
+  const [open, setOpen] = useState(false);
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const theme = useTheme();
+  const { mode, toggleTheme } = useAppTheme();
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+
+  const handleDrawerToggle = () => {
+    setOpen(!open);
+  };
+
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
+
+  const handleProfile = () => {
+    handleMenuClose();
+    navigate('/profile');
+  };
+
+  const handleLogout = () => {
+    handleMenuClose();
+    signOut();
+  };
+
+  return (
+    <Box sx={{ display: 'flex' }}>
+      <AppBar
+        position="fixed"
+        sx={{
+          width: { sm: `calc(100% - ${open ? drawerWidth : 0}px)` },
+          ml: { sm: `${open ? drawerWidth : 0}px` },
+          transition: theme.transitions.create(['margin', 'width'], {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.leavingScreen,
+          }),
+        }}
+      >
+        <Toolbar>
+          <IconButton
+            color="inherit"
+            edge="start"
+            onClick={handleDrawerToggle}
+            sx={{ mr: 2 }}
+          >
+            <MenuIcon />
+          </IconButton>
+
+          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
+            {title}
+          </Typography>
+
+          <IconButton color="inherit" onClick={toggleTheme}>
+            {mode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />}
+          </IconButton>
+
+          <IconButton
+            onClick={handleMenuOpen}
+            sx={{ ml: 1 }}
+          >
+            <Avatar alt={user?.username}>
+              {user?.username[0].toUpperCase()}
+            </Avatar>
+          </IconButton>
+
+          <Menu
+            anchorEl={anchorEl}
+            open={Boolean(anchorEl)}
+            onClose={handleMenuClose}
+            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+          >
+            <MenuItem onClick={handleProfile}>
+              <ListItemIcon>
+                <PersonIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Profile" />
+            </MenuItem>
+            
+            <MenuItem onClick={() => {
+              handleMenuClose();
+              navigate('/settings');
+            }}>
+              <ListItemIcon>
+                <SettingsIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Settings" />
+            </MenuItem>
+
+            <Divider />
+
+            <MenuItem onClick={handleLogout}>
+              <ListItemIcon>
+                <LogoutIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Logout" />
+            </MenuItem>
+          </Menu>
+        </Toolbar>
+      </AppBar>
+
+      <Drawer
+        variant={isMobile ? 'temporary' : 'persistent'}
+        anchor="left"
+        open={open}
+        onClose={handleDrawerToggle}
+        sx={{
+          width: drawerWidth,
+          flexShrink: 0,
+          '& .MuiDrawer-paper': {
+            width: drawerWidth,
+            boxSizing: 'border-box',
+          },
+        }}
+      >
+        {/* Drawer content will be added here */}
+      </Drawer>
+
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          p: 3,
+          width: { sm: `calc(100% - ${open ? drawerWidth : 0}px)` },
+          ml: { sm: `${open ? drawerWidth : 0}px` },
+          transition: theme.transitions.create(['margin', 'width'], {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.leavingScreen,
+          }),
+        }}
+      >
+        <Toolbar /> {/* Spacer for AppBar */}
+        {children}
+      </Box>
+    </Box>
+  );
+};
