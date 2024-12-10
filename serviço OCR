@@ -1,0 +1,173 @@
+import tesseract from 'node-tesseract-ocr';
+import { createWorker } from 'tesseract.js';
+import pdf2image from 'pdf2image';
+import sharp from 'sharp';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { config } from '../config/environment';
+
+export class OCRService {
+  /**
+   * Pré-processa a imagem para melhorar o OCR
+   * @param imagePath Caminho da imagem
+   */
+  private static async preprocessImage(imagePath: string): Promise<string> {
+    const outputPath = path.join(
+      config.UPLOAD_DIR,
+      `preprocessed_${path.basename(imagePath)}`
+    );
+
+    await sharp(imagePath)
+      // Converte para escala de cinza
+      .grayscale()
+      // Aumenta o contraste
+      .normalize()
+      // Remove ruído
+      .median(1)
+      // Binarização adaptativa
+      .threshold(128)
+      // Redimensiona mantendo a qualidade
+      .resize(2000, undefined, {
+        withoutEnlargement: true,
+        fit: 'inside'
+      })
+      .toFile(outputPath);
+
+    return outputPath;
+  }
+
+  /**
+   * Detecta a orientação do texto
+   * @param imagePath Caminho da imagem
+   */
+  private static async detectOrientation(imagePath: string): Promise<number> {
+    const worker = await createWorker();
+    await worker.loadLanguage('osd');
+    await worker.initialize('osd');
+    
+    const { data: { orientation } } = await worker.detect(imagePath);
+    await worker.terminate();
+    
+    return orientation;
+  }
+
+  /**
+   * Extrai texto de uma imagem
+   * @param imagePath Caminho da imagem
+   * @param language Idioma do texto
+   */
+  static async extractText(
+    imagePath: string,
+    language = 'eng'
+  ): Promise<{ text: string; confidence: number }> {
+    try {
+      // Pré-processa a imagem
+      const processedPath = await this.preprocessImage(imagePath);
+      
+      // Detecta a orientação
+      const orientation = await this.detectOrientation(processedPath);
+      
+      // Configura o OCR
+      const config = {
+        lang: language,
+        oem: 1, // LSTM only
+        psm: 3, // Auto-page segmentation
+        dpi: 300,
+        rotate: orientation
+      };
+
+      // Executa o OCR
+      const result = await tesseract.recognize(processedPath, config);
+      
+      // Limpa arquivo temporário
+      await fs.unlink(processedPath).catch(() => {});
+      
+      return {
+        text: result.trim(),
+        confidence: parseFloat(result.confidence || '0')
+      };
+    } catch (error) {
+      console.error('Error in OCR processing:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Processa um arquivo PDF
+   * @param pdfPath Caminho do PDF
+   */
+  static async processPDF(pdfPath: string): Promise<string[]> {
+    try {
+      // Converte PDF para imagens
+      const images = await pdf2image.convertPDF(pdfPath, {
+        outputDirectory: config.UPLOAD_DIR,
+        outputFormat: 'png',
+        density: 300
+      });
+      
+      // Processa cada página
+      const textPromises = images.map(async (imagePath) => {
+        const { text } = await this.extractText(imagePath);
+        // Limpa imagem temporária
+        await fs.unlink(imagePath).catch(() => {});
+        return text;
+      });
+
+      return Promise.all(textPromises);
+    } catch (error) {
+      console.error('Error processing PDF:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Processa um documento (PDF ou imagem)
+   * @param filePath Caminho do arquivo
+   */
+  static async processDocument(filePath: string): Promise<{
+    text: string;
+    metadata: any;
+  }> {
+    try {
+      let text: string;
+      let metadata: any = {};
+
+      if (filePath.endsWith('.pdf')) {
+        const pages = await this.processPDF(filePath);
+        text = pages.join('\n\n=== PAGE BREAK ===\n\n');
+        metadata.pageCount = pages.length;
+      } else {
+        const result = await this.extractText(filePath);
+        text = result.text;
+        metadata.confidence = result.confidence;
+        metadata.pageCount = 1;
+      }
+
+      // Extrai metadados adicionais
+      metadata.wordCount = text.split(/\s+/).length;
+      metadata.characterCount = text.length;
+      metadata.languages = await this.detectLanguages(text);
+
+      return { text, metadata };
+    } catch (error) {
+      console.error('Error processing document:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Detecta idiomas no texto
+   * @param text Texto para análise
+   */
+  private static async detectLanguages(text: string): Promise<string[]> {
+    const worker = await createWorker();
+    await worker.loadLanguage('osd');
+    await worker.initialize('osd');
+    
+    const { data: { languages } } = await worker.detect(text);
+    
+    await worker.terminate();
+    
+    return languages.map((lang: any) => lang.code);
+  }
+}
