@@ -1,0 +1,73 @@
+import pool from '../config/database';
+import bcrypt from 'bcrypt';
+import { User } from '../types';
+
+export class UserModel {
+  /**
+   * Cria um novo usuário
+   * @param userData Dados do usuário a ser criado
+   */
+  static async create(userData: Partial<User>): Promise<User> {
+    const { username, email, password, role = 'user' } = userData;
+    
+    // Hash da senha antes de salvar
+    const hashedPassword = await bcrypt.hash(password!, 10);
+    
+    const query = `
+      INSERT INTO users (username, email, password, role)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `;
+    
+    const result = await pool.query(query, [
+      username,
+      email,
+      hashedPassword,
+      role
+    ]);
+    
+    return result.rows[0];
+  }
+
+  /**
+   * Busca um usuário pelo email
+   * @param email Email do usuário
+   */
+  static async findByEmail(email: string): Promise<User | null> {
+    const query = 'SELECT * FROM users WHERE email = $1';
+    const result = await pool.query(query, [email]);
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Verifica se a senha está correta
+   * @param password Senha fornecida
+   * @param hashedPassword Hash da senha armazenada
+   */
+  static async comparePassword(password: string, hashedPassword: string): Promise<boolean> {
+    return bcrypt.compare(password, hashedPassword);
+  }
+
+  /**
+   * Atualiza os dados de um usuário
+   * @param id ID do usuário
+   * @param userData Dados a serem atualizados
+   */
+  static async update(id: number, userData: Partial<User>): Promise<User> {
+    const fields = Object.keys(userData)
+      .filter(key => userData[key] !== undefined)
+      .map((key, index) => `${key} = $${index + 2}`);
+    
+    const values = Object.values(userData).filter(value => value !== undefined);
+    
+    const query = `
+      UPDATE users
+      SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING *
+    `;
+    
+    const result = await pool.query(query, [id, ...values]);
+    return result.rows[0];
+  }
+}
