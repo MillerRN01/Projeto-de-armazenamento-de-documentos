@@ -211,4 +211,122 @@ export const DocumentAnnotations: React.FC<{ documentId: string }> = ({ document
           position: 'absolute',
           top: 16,
           right: 16,
-          p: 
+                    p: 1,
+          display: 'flex',
+          gap: 1,
+          backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        }}
+      >
+        <Tooltip title="Draw">
+          <IconButton
+            color={activeType === 'drawing' ? 'primary' : 'default'}
+            onClick={() => handleToolSelect('drawing')}
+          >
+            <Draw />
+          </IconButton>
+        </Tooltip>
+
+        <Tooltip title="Add Comment">
+          <IconButton
+            color={activeType === 'comment' ? 'primary' : 'default'}
+            onClick={() => handleToolSelect('comment')}
+          >
+            <Comment />
+          </IconButton>
+        </Tooltip>
+
+        <Tooltip title="Color">
+          <IconButton onClick={(e) => setColorPickerAnchor(e.currentTarget)}>
+            <FormatColorFill sx={{ color: selectedColor }} />
+          </IconButton>
+        </Tooltip>
+
+        {activeType && (
+          <>
+            <Tooltip title="Save">
+              <IconButton color="success" onClick={handleSaveAnnotation}>
+                <Save />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Cancel">
+              <IconButton color="error" onClick={() => setActiveType(null)}>
+                <Cancel />
+              </IconButton>
+            </Tooltip>
+          </>
+        )}
+      </Paper>
+
+      {activeType === 'comment' && (
+        <Paper
+          sx={{
+            position: 'absolute',
+            bottom: 16,
+            left: 16,
+            right: 16,
+            p: 2,
+            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+          }}
+        >
+          <TextField
+            fullWidth
+            multiline
+            rows={3}
+            placeholder="Type your comment here..."
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+          />
+        </Paper>
+      )}
+
+      <Menu
+        anchorEl={colorPickerAnchor}
+        open={Boolean(colorPickerAnchor)}
+        onClose={() => setColorPickerAnchor(null)}
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'right',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'right',
+        }}
+      >
+        <Box sx={{ p: 1 }}>
+          <SketchPicker
+            color={selectedColor}
+            onChange={handleColorChange}
+            disableAlpha
+          />
+        </Box>
+      </Menu>
+
+      {annotations.map((annotation) => (
+        <Box
+          key={annotation.id}
+          sx={{
+            position: 'absolute',
+            left: annotation.position.x,
+            top: annotation.position.y,
+            zIndex: 1000,
+          }}
+        >
+          {annotation.type === 'comment' && (
+            <Paper
+              sx={{
+                p: 1,
+                maxWidth: 200,
+                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+              }}
+            >
+              <Typography variant="body2">{annotation.content}</Typography>
+              <Typography variant="caption" color="textSecondary">
+                {annotation.created_by} - {new Date(annotation.created_at).toLocaleString()}
+              </Typography>
+            </Paper>
+          )}
+        </Box>
+      ))}
+    </Box>
+  );
+};
