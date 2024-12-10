@@ -1,0 +1,45 @@
+document-management-system/
+├── backend/
+│   ├── src/
+│   │   ├── config/
+│   │   │   ├── database.ts
+│   │   │   └── environment.ts
+│   │   ├── controllers/
+│   │   │   ├── categoryController.ts
+│   │   │   ├── documentController.ts
+│   │   │   ├── userController.ts
+│   │   │   └── workflowController.ts
+│   │   ├── middleware/
+│   │   │   ├── auth.ts
+│   │   │   └── upload.ts
+│   │   ├── models/
+│   │   │   ├── Category.ts
+│   │   │   ├── Document.ts
+│   │   │   └── User.ts
+│   │   ├── routes/
+│   │   │   ├── categoryRoutes.ts
+│   │   │   ├── documentRoutes.ts
+│   │   │   └── userRoutes.ts
+│   │   ├── services/
+│   │   │   ├── encryptionService.ts
+│   │   │   ├── compressionService.ts
+│   │   │   └── websocketService.ts
+│   │   └── app.ts
+│   ├── package.json
+│   └── tsconfig.json
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── CategoryManager.tsx
+│   │   │   ├── DocumentViewer.tsx
+│   │   │   ├── DocumentAnnotations.tsx
+│   │   │   └── ...
+│   │   ├── contexts/
+│   │   │   └── ThemeContext.tsx
+│   │   ├── services/
+│   │   │   ├── api.ts
+│   │   │   └── websocket.ts
+│   │   └── App.tsx
+│   ├── package.json
+│   └── tsconfig.json
+└── README.md
