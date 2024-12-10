@@ -1,0 +1,142 @@
+import React, { useState } from 'react';
+import {
+  Box,
+  Button,
+  Paper,
+  Typography,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  CircularProgress,
+} from '@mui/material';
+import {
+  Backup as BackupIcon,
+  Restore as RestoreIcon,
+  Download as DownloadIcon,
+  Delete as DeleteIcon,
+} from '@mui/icons-material';
+import api from '../../services/api';
+
+interface Backup {
+  id: string;
+  created_at: string;
+  size: number;
+  type: 'auto' | 'manual';
+}
+
+export const BackupManager: React.FC = () => {
+  const [backups, setBackups] = useState<Backup[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
+  const [selectedBackup, setSelectedBackup] = useState<Backup | null>(null);
+  const [confirmPassword, setConfirmPassword] = useState('');
+
+  const createBackup = async () => {
+    setLoading(true);
+    try {
+      await api.post('/admin/backups');
+      // Reload backups list
+    } catch (error) {
+      console.error('Error creating backup:', error);
+    }
+    setLoading(false);
+  };
+
+  const restoreBackup = async () => {
+    if (!selectedBackup) return;
+
+    setLoading(true);
+    try {
+      await api.post(`/admin/backups/${selectedBackup.id}/restore`, {
+        password: confirmPassword,
+      });
+      setRestoreDialogOpen(false);
+      setConfirmPassword('');
+    } catch (error) {
+      console.error('Error restoring backup:', error);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <Paper sx={{ p: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+        <Typography variant="h6">Backup Manager</Typography>
+        <Button
+          variant="contained"
+          startIcon={<BackupIcon />}
+          onClick={createBackup}
+          disabled={loading}
+        >
+          Create Backup
+        </Button>
+      </Box>
+
+      <List>
+        {backups.map((backup) => (
+          <ListItem key={backup.id}>
+            <ListItemText
+              primary={new Date(backup.created_at).toLocaleString()}
+              secondary={`${(backup.size / 1024 / 1024).toFixed(2)} MB - ${
+                backup.type
+              }`}
+            />
+            <ListItemSecondaryAction>
+              <IconButton
+                onClick={() => {
+                  setSelectedBackup(backup);
+                  setRestoreDialogOpen(true);
+                }}
+              >
+                <RestoreIcon />
+              </IconButton>
+              <IconButton>
+                <DownloadIcon />
+              </IconButton>
+              <IconButton>
+                <DeleteIcon />
+              </IconButton>
+            </ListItemSecondaryAction>
+          </ListItem>
+        ))}
+      </List>
+
+      <Dialog
+        open={restoreDialogOpen}
+        onClose={() => setRestoreDialogOpen(false)}
+      >
+              <DialogTitle>Restore Backup</DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" gutterBottom>
+            Are you sure you want to restore this backup? This action will replace all current data.
+          </Typography>
+          <TextField
+            fullWidth
+            type="password"
+            label="Confirm Admin Password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            margin="normal"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRestoreDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={restoreBackup}
+            color="error"
+            disabled={!confirmPassword || loading}
+          >
+            {loading ? <CircularProgress size={24} /> : 'Restore'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Paper>
+  );
+};
