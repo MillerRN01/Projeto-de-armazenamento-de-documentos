@@ -1,0 +1,153 @@
+import React from 'react';
+import {
+  Box,
+  Grid,
+  Card,
+  CardContent,
+  CardActions,
+  Typography,
+  IconButton,
+  Chip,
+  Tooltip,
+  LinearProgress,
+} from '@mui/material';
+import {
+  Visibility as ViewIcon,
+  Download as DownloadIcon,
+  Share as ShareIcon,
+  Description as FileIcon,
+  Image as ImageIcon,
+  PictureAsPdf as PdfIcon,
+} from '@mui/icons-material';
+import { format } from 'date-fns';
+
+interface SearchResult {
+  id: string;
+  title: string;
+  type: string;
+  size: number;
+  created_at: string;
+  created_by: string;
+  category: string;
+  tags: string[];
+  preview_url?: string;
+  match_context?: string;
+}
+
+interface SearchResultsProps {
+  results: SearchResult[];
+  loading: boolean;
+  onView: (result: SearchResult) => void;
+  onDownload: (result: SearchResult) => void;
+  onShare: (result: SearchResult) => void;
+}
+
+export const SearchResults: React.FC<SearchResultsProps> = ({
+  results,
+  loading,
+  onView,
+  onDownload,
+  onShare,
+}) => {
+  const getFileIcon = (type: string) => {
+    switch (type) {
+      case 'pdf':
+        return <PdfIcon />;
+      case 'image':
+        return <ImageIcon />;
+      default:
+        return <FileIcon />;
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+  };
+
+  if (loading) {
+    return <LinearProgress />;
+  }
+
+  if (results.length === 0) {
+    return (
+      <Box sx={{ textAlign: 'center', py: 4 }}>
+        <Typography variant="h6" color="textSecondary">
+          No results found
+        </Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <Grid container spacing={2}>
+      {results.map((result) => (
+        <Grid item xs={12} sm={6} md={4} key={result.id}>
+          <Card>
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                {getFileIcon(result.type)}
+                <Typography variant="h6" sx={{ ml: 1 }}>
+                  {result.title}
+                </Typography>
+              </Box>
+
+              <Typography variant="body2" color="textSecondary" gutterBottom>
+                {formatFileSize(result.size)} • {format(new Date(result.created_at), 'PP')}
+              </Typography>
+
+              <Typography variant="body2" gutterBottom>
+                Created by {result.created_by}
+              </Typography>
+
+              <Chip label={result.category} size="small" sx={{ mr: 1 }} />
+
+              {result.tags.map((tag) => (
+                <Chip key={tag} label={tag} size="small" sx={{ mr: 1 }} />
+              ))}
+
+              {result.match_context && (
+                <Typography
+                  variant="body2"
+                  sx={{
+                    mt: 2,
+                    p: 1,
+                    bgcolor: 'action.hover',
+                    borderRadius: 1,
+                    fontSize: '0.8rem',
+                  }}
+                >
+                  <Typography variant="caption" color="textSecondary" display="block" gutterBottom>
+                    Matched content:
+                  </Typography>
+                  {...result.match_context}
+                </Typography>
+              )}
+            </CardContent>
+
+            <CardActions>
+              <Tooltip title="View">
+                <IconButton onClick={() => onView(result)}>
+                  <ViewIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Download">
+                <IconButton onClick={() => onDownload(result)}>
+                  <DownloadIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Share">
+                <IconButton onClick={() => onShare(result)}>
+                  <ShareIcon />
+                </IconButton>
+              </Tooltip>
+            </CardActions>
+          </Card>
+        </Grid>
+      ))}
+    </Grid>
+  );
+};
