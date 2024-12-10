@@ -1,0 +1,122 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Drawer,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemAvatar,
+  Avatar,
+  Typography,
+  IconButton,
+  Badge,
+  Box,
+} from '@mui/material';
+import {
+  Notifications as NotificationsIcon,
+  Close as CloseIcon,
+} from '@mui/icons-material';
+import { useWebSocket } from '../../hooks/useWebSocket';
+import api from '../../services/api';
+
+interface Notification {
+  id: string;
+  type: string;
+  message: string;
+  created_at: string;
+  read: boolean;
+  data?: any;
+}
+
+export const NotificationCenter: React.FC = () => {
+  const [open, setOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const { socket } = useWebSocket();
+
+  useEffect(() => {
+    loadNotifications();
+
+    if (socket) {
+      socket.on('notification', handleNewNotification);
+      return () => {
+        socket.off('notification');
+      };
+    }
+  }, [socket]);
+
+  const loadNotifications = async () => {
+    const response = await api.get('/notifications');
+    setNotifications(response.data);
+  };
+
+  const handleNewNotification = (notification: Notification) => {
+    setNotifications((prev) => [notification, ...prev]);
+  };
+
+  const markAsRead = async (notificationId: string) => {
+    await api.put(`/notifications/${notificationId}/read`);
+    setNotifications(
+      notifications.map((n) =>
+        n.id === notificationId ? { ...n, read: true } : n
+      )
+    );
+  };
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  return (
+    <>
+      <IconButton color="inherit" onClick={() => setOpen(true)}>
+        <Badge badgeContent={unreadCount} color="error">
+          <NotificationsIcon />
+        </Badge>
+      </IconButton>
+
+      <Drawer
+        anchor="right"
+        open={open}
+        onClose={() => setOpen(false)}
+      >
+        <Box sx={{ width: 350 }}>
+          <Box
+            sx={{
+              p: 2,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              borderBottom: 1,
+              borderColor: 'divider',
+            }}
+          >
+            <Typography variant="h6">Notifications</Typography>
+            <IconButton onClick={() => setOpen(false)}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+
+          <List>
+            {notifications.map((notification) => (
+              <ListItem
+                key={notification.id}
+                onClick={() => markAsRead(notification.id)}
+                sx={{
+                  bgcolor: notification.read ? 'transparent' : 'action.hover',
+                  cursor: 'pointer',
+                }}
+              >
+                <ListItemAvatar>
+                  <Avatar>
+                    <NotificationsIcon />
+                  </Avatar>
+                </ListItemAvatar>
+                <ListItemText
+                  primary={notification.message}
+                  secondary={new Date(notification.created_at).toLocaleString()}
+                />
+              </ListItem>
+            ))}
+          </List>
+        </Box>
+      </Drawer>
+    </>
+  );
+};
