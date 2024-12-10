@@ -1,0 +1,368 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Paper,
+  TextField,
+  Button,
+  Chip,
+  Typography,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Slider,
+  IconButton,
+  InputAdornment,
+  Tooltip,
+  Grid,
+  Divider,
+} from '@mui/material';
+import {
+  Search as SearchIcon,
+  FilterList as FilterIcon,
+  Clear as ClearIcon,
+  Save as SaveIcon,
+  History as HistoryIcon,
+  DateRange as DateRangeIcon,
+} from '@mui/icons-material';
+import { DateRangePicker } from '@mui/lab';
+import { useDebounce } from '../../hooks/useDebounce';
+import api from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
+
+interface SearchFilters {
+  query: string;
+  categories: string[];
+  dateRange: [Date | null, Date | null];
+  fileTypes: string[];
+  size: [number, number];
+  tags: string[];
+  creator?: string;
+  lastModified?: string;
+  status?: string;
+}
+
+interface SavedSearch {
+  id: string;
+  name: string;
+  filters: SearchFilters;
+}
+
+export const AdvancedSearch: React.FC<{
+  onSearch: (results: any[]) => void;
+}> = ({ onSearch }) => {
+  const [filters, setFilters] = useState<SearchFilters>({
+    query: '',
+    categories: [],
+    dateRange: [null, null],
+    fileTypes: [],
+    size: [0, 100],
+    tags: [],
+  });
+  const [categories, setCategories] = useState<string[]>([]);
+  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
+  const [saveSearchName, setSaveSearchName] = useState('');
+  const [showSaveSearch, setShowSaveSearch] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const debouncedFilters = useDebounce(filters, 500);
+  const { user } = useAuth();
+
+  useEffect(() => {
+    loadCategories();
+    loadSavedSearches();
+  }, []);
+
+  useEffect(() => {
+    performSearch();
+  }, [debouncedFilters]);
+
+  const loadCategories = async () => {
+    try {
+      const response = await api.get('/categories');
+      setCategories(response.data);
+    } catch (error) {
+      console.error('Error loading categories:', error);
+    }
+  };
+
+  const loadSavedSearches = async () => {
+    try {
+      const response = await api.get('/users/saved-searches');
+      setSavedSearches(response.data);
+    } catch (error) {
+      console.error('Error loading saved searches:', error);
+    }
+  };
+
+  const performSearch = async () => {
+    try {
+      setLoading(true);
+      const response = await api.post('/documents/search', filters);
+      onSearch(response.data);
+    } catch (error) {
+      console.error('Error performing search:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveSearch = async () => {
+    try {
+      await api.post('/users/saved-searches', {
+        name: saveSearchName,
+        filters,
+      });
+      loadSavedSearches();
+      setShowSaveSearch(false);
+      setSaveSearchName('');
+    } catch (error) {
+      console.error('Error saving search:', error);
+    }
+  };
+
+  const handleLoadSearch = (savedSearch: SavedSearch) => {
+    setFilters(savedSearch.filters);
+  };
+
+  const handleClearFilters = () => {
+    setFilters({
+      query: '',
+      categories: [],
+      dateRange: [null, null],
+      fileTypes: [],
+      size: [0, 100],
+      tags: [],
+    });
+  };
+
+  const formatFileSize = (value: number) => {
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(value) / Math.log(1024));
+    return `${Math.round(value / Math.pow(1024, i))} ${sizes[i]}`;
+  };
+
+  return (
+    <Paper sx={{ p: 2, mb: 2 }}>
+      <Box sx={{ mb: 2 }}>
+        <TextField
+          fullWidth
+          placeholder="Search documents..."
+          value={filters.query}
+          onChange={(e) => setFilters({ ...filters, query: e.target.value })}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+            endAdornment: loading && (
+              <InputAdornment position="end">
+                <CircularProgress size={20} />
+              </InputAdornment>
+            ),
+          }}
+        />
+      </Box>
+
+      <Accordion>
+        <AccordionSummary expandIcon={<FilterIcon />}>
+          <Typography>Advanced Filters</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel>Categories</InputLabel>
+                <Select
+                  multiple
+                  value={filters.categories}
+                  onChange={(e) => setFilters({
+                    ...filters,
+                    categories: e.target.value as string[],
+                  })}
+                  renderValue={(selected) => (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {selected.map((value) => (
+                        <Chip key={value} label={value} size="small" />
+                      ))}
+                    </Box>
+                  )}
+                >
+                  {categories.map((category) => (
+                    <MenuItem key={category} value={category}>
+                      {category}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel>File Types</InputLabel>
+                <Select
+                  multiple
+                  value={filters.fileTypes}
+                  onChange={(e) => setFilters({
+                    ...filters,
+                    fileTypes: e.target.value as string[],
+                  })}
+                  renderValue={(selected) => (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {selected.map((value) => (
+                        <Chip key={value} label={value} size="small" />
+                      ))}
+                    </Box>
+                  )}
+                >
+                  <MenuItem value="pdf">PDF</MenuItem>
+                  <MenuItem value="doc">Word</MenuItem>
+                  <MenuItem value="image">Image</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
+            <Grid item xs={12}>
+              <Typography gutterBottom>Date Range</Typography>
+              <DateRangePicker
+                startText="From"
+                endText="To"
+                value={filters.dateRange}
+                onChange={(newValue) => setFilters({
+                  ...filters,
+                  dateRange: newValue,
+                })}
+                renderInput={(startProps, endProps) => (
+                  <>
+                    <TextField {...startProps} />
+                    <Box sx={{ mx: 2 }}> to </Box>
+                    <TextField {...endProps} />
+                  </>
+                )}
+              />
+            </Grid>
+
+            <Grid item xs={12}>
+              <Typography gutterBottom>File Size (MB)</Typography>
+              <Slider
+                value={filters.size}
+                onChange={(_, newValue) => setFilters({
+                  ...filters,
+                  size: newValue as [number, number],
+                })}
+                valueLabelDisplay="auto"
+                valueLabelFormat={formatFileSize}
+                min={0}
+                max={100}
+              />
+            </Grid>
+
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Tags"
+                placeholder="Add tags..."
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    const target = e.target as HTMLInputElement;
+                    const value = target.value.trim();
+                    if (value && !filters.tags.includes(value)) {
+                      setFilters({
+                        ...filters,
+                        tags: [...filters.tags, value],
+                      });
+                      target.value = '';
+                    }
+                  }
+                }}
+              />
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+                {filters.tags.map((tag) => (
+                  <Chip
+                    key={tag}
+                    label={tag}
+                    onDelete={() => setFilters({
+                      ...filters,
+                      tags: filters.tags.filter((t) => t !== tag),
+                    })}
+                  />
+                ))}
+              </Box>
+            </Grid>
+          </Grid>
+
+          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between' }}>
+            <Button
+              startIcon={<ClearIcon />}
+              onClick={handleClearFilters}
+            >
+              Clear Filters
+            </Button>
+            <Button
+              startIcon={<SaveIcon />}
+              onClick={() => setShowSaveSearch(true)}
+            >
+              Save Search
+            </Button>
+          </Box>
+        </AccordionDetails>
+      </Accordion>
+
+      {savedSearches.length > 0 && (
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            Saved Searches
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {savedSearches.map((search) => (
+              <Chip
+                key={search.id}
+                label={search.name}
+                onClick={() => handleLoadSearch(search)}
+                onDelete={async () => {
+                  try {
+                    await api.delete(`/users/saved-searches/${search.id}`);
+                    loadSavedSearches();
+                  } catch (error) {
+                    console.error('Error deleting saved search:', error);
+                  }
+                }}
+              />
+            ))}
+          </Box>
+        </Box>
+      )}
+
+      <Dialog
+        open={showSaveSearch}
+        onClose={() => setShowSaveSearch(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Save Search</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            label="Search Name"
+            value={saveSearchName}
+            onChange={(e) => setSaveSearchName(e.target.value)}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowSaveSearch(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveSearch}
+            disabled={!saveSearchName}
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Paper>
+  );
+};
