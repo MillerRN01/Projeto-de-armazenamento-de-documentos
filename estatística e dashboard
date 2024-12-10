@@ -1,0 +1,94 @@
+import React from 'react';
+import {
+  Grid,
+  Paper,
+  Typography,
+  Box,
+  CircularProgress,
+} from '@mui/material';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
+
+interface StatisticsProps {
+  data: {
+    documentsCount: number;
+    storageUsed: number;
+    activeUsers: number;
+    recentActivity: {
+      date: string;
+      uploads: number;
+      downloads: number;
+      shares: number;
+    }[];
+  };
+  loading: boolean;
+}
+
+export const Statistics: React.FC<StatisticsProps> = ({ data, loading }) => {
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  return (
+    <Grid container spacing={3}>
+      <Grid item xs={12} md={4}>
+        <Paper sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            Total Documents
+          </Typography>
+          <Typography variant="h4">{data.documentsCount}</Typography>
+        </Paper>
+      </Grid>
+
+      <Grid item xs={12} md={4}>
+        <Paper sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            Storage Used
+          </Typography>
+          <Typography variant="h4">
+            {(data.storageUsed / 1024 / 1024).toFixed(2)} GB
+          </Typography>
+        </Paper>
+      </Grid>
+
+      <Grid item xs={12} md={4}>
+        <Paper sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            Active Users
+          </Typography>
+          <Typography variant="h4">{data.activeUsers}</Typography>
+        </Paper>
+      </Grid>
+
+      <Grid item xs={12}>
+        <Paper sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            Recent Activity
+          </Typography>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={data.recentActivity}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="uploads" fill="#8884d8" name="Uploads" />
+              <Bar dataKey="downloads" fill="#82ca9d" name="Downloads" />
+              <Bar dataKey="shares" fill="#ffc658" name="Shares" />
+            </BarChart>
+          </ResponsiveContainer>
+        </Paper>
+      </Grid>
+    </Grid>
+  );
+};
