@@ -1,0 +1,239 @@
+import pool from '../config/database';
+import { Document, DocumentMetadata } from '../types';
+import { EncryptionService } from '../services/encryptionService';
+import { CompressionService } from '../services/compressionService';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { config } from '../config/environment';
+
+export class DocumentModel {
+  /**
+   * Cria um novo documento
+   * @param documentData Dados do documento
+   * @param file Arquivo do documento
+   */
+  static async create(documentData: Partial<Document>, file: Express.Multer.File): Promise<Document> {
+    try {
+      // Inicia uma transação
+      const client = await pool.connect();
+      
+      try {
+        await client.query('BEGIN');
+
+        // Processa o arquivo
+        const fileBuffer = await fs.readFile(file.path);
+        const fileHash = await this.processAndStoreFile(fileBuffer, file.originalname);
+
+        // Insere o documento no banco
+        const query = `
+          INSERT INTO documents (
+            title,
+            description,
+            file_path,
+            file_hash,
+            category_id,
+            metadata,
+            created_by
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          RETURNING *
+        `;
+
+        const values = [
+          documentData.title,
+          documentData.description,
+          path.join(config.UPLOAD_DIR, `${fileHash}.encrypted`),
+          fileHash,
+          documentData.category_id,
+          documentData.metadata || {},
+          documentData.created_by
+        ];
+
+        const result = await client.query(query, values);
+        
+        // Commit da transação
+        await client.query('COMMIT');
+        
+        return result.rows[0];
+      } catch (error) {
+        // Rollback em caso de erro
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      // Limpa o arquivo temporário em caso de erro
+      await fs.unlink(file.path).catch(() => {});
+      throw error;
+    }
+  }
+
+  /**
+   * Processa e armazena o arquivo do documento
+   * @param fileBuffer Buffer do arquivo
+   * @param originalName Nome original do arquivo
+   */
+  private static async processAndStoreFile(
+    fileBuffer: Buffer,
+    originalName: string
+  ): Promise<string> {
+    // Comprime o arquivo
+    const compressed = await CompressionService.compress(fileBuffer);
+    
+    // Criptografa o arquivo comprimido
+    const encrypted = await EncryptionService.encrypt(
+      compressed,
+      config.ENCRYPTION_KEY
+    );
+    
+    // Gera hash do arquivo original
+    const fileHash = await EncryptionService.generateHash(fileBuffer);
+    
+    // Salva o arquivo processado
+    const filePath = path.join(config.UPLOAD_DIR, `${fileHash}.encrypted`);
+    await fs.writeFile(filePath, encrypted);
+    
+    return fileHash;
+  }
+
+  /**
+   * Busca um documento pelo ID
+   * @param id ID do documento
+   */
+  static async findById(id: number): Promise<Document | null> {
+    const query = `
+      SELECT 
+        d.*,
+        c.name as category_name,
+        u.username as created_by_name
+      FROM documents d
+      LEFT JOIN categories c ON d.category_id = c.id
+      LEFT JOIN users u ON d.created_by = u.id
+      WHERE d.id = $1
+    `;
+    
+    const result = await pool.query(query, [id]);
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Atualiza um documento
+   * @param id ID do documento
+   * @param documentData Dados a serem atualizados
+   */
+  static async update(id: number, documentData: Partial<Document>): Promise<Document> {
+    const fields = Object.keys(documentData)
+      .filter(key => documentData[key] !== undefined)
+      .map((key, index) => `${key} = $${index + 2}`);
+    
+    const values = Object.values(documentData).filter(value => value !== undefined);
+    
+    const query = `
+      UPDATE documents
+      SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING *
+    `;
+    
+    const result = await pool.query(query, [id, ...values]);
+    return result.rows[0];
+  }
+
+  /**
+   * Deleta um documento
+   * @param id ID do documento
+   */
+  static async delete(id: number): Promise<void> {
+    const client = await pool.connect();
+    
+    try {
+      await client.query('BEGIN');
+      
+      // Busca o documento
+      const document = await this.findById(id);
+      if (!document) throw new Error('Document not found');
+      
+      // Deleta o arquivo
+      await fs.unlink(document.file_path).catch(() => {});
+      
+      // Deleta registros relacionados
+      await client.query('DELETE FROM document_annotations WHERE document_id = $1', [id]);
+      await client.query('DELETE FROM document_versions WHERE document_id = $1', [id]);
+      await client.query('DELETE FROM document_signatures WHERE document_id = $1', [id]);
+      await client.query('DELETE FROM documents WHERE id = $1', [id]);
+      
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Busca documentos com filtros
+   * @param filters Filtros de busca
+   */
+  static async search(filters: {
+    category_id?: number;
+    query?: string;
+    created_by?: number;
+    start_date?: Date;
+    end_date?: Date;
+  }): Promise<Document[]> {
+    let query = `
+      SELECT 
+        d.*,
+        c.name as category_name,
+        u.username as created_by_name
+      FROM documents d
+      LEFT JOIN categories c ON d.category_id = c.id
+      LEFT JOIN users u ON d.created_by = u.id
+      WHERE 1=1
+    `;
+    
+    const values: any[] = [];
+    let paramCount = 1;
+    
+    if (filters.category_id) {
+      query += ` AND d.category_id = $${paramCount}`;
+      values.push(filters.category_id);
+      paramCount++;
+    }
+    
+    if (filters.query) {
+      query += ` AND (
+        d.title ILIKE $${paramCount} OR
+        d.description ILIKE $${paramCount} OR
+        d.metadata->>'ocr_text' ILIKE $${paramCount}
+      )`;
+      values.push(`%${filters.query}%`);
+      paramCount++;
+    }
+    
+    if (filters.created_by) {
+      query += ` AND d.created_by = $${paramCount}`;
+      values.push(filters.created_by);
+      paramCount++;
+    }
+    
+    if (filters.start_date) {
+      query += ` AND d.created_at >= $${paramCount}`;
+      values.push(filters.start_date);
+      paramCount++;
+    }
+    
+    if (filters.end_date) {
+      query += ` AND d.created_at <= $${paramCount}`;
+      values.push(filters.end_date);
+      paramCount++;
+    }
+    
+    query += ' ORDER BY d.created_at DESC';
+    
+    const result = await pool.query(query, values);
+    return result.rows;
+  }
+}
