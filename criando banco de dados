@@ -1,0 +1,6 @@
+# Acessar PostgreSQL
+psql -U postgres
+
+# Criar banco de dados
+CREATE DATABASE document_management;
+\c document_management
