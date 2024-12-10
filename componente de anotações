@@ -1,0 +1,214 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Box,
+  Paper,
+  IconButton,
+  Typography,
+  Tooltip,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
+  TextField,
+  Button,
+} from '@mui/material';
+import {
+  Draw,
+  Highlight,
+  Comment,
+  Delete,
+  FormatColorFill,
+  Save,
+  Cancel,
+} from '@mui/icons-material';
+import { SketchPicker } from 'react-color';
+import { fabric } from 'fabric';
+import api from '../../services/api';
+import { useWebSocket } from '../../hooks/useWebSocket';
+
+interface Annotation {
+  id: string;
+  type: 'highlight' | 'drawing' | 'comment';
+  content?: string;
+  position: any;
+  color: string;
+  created_by: string;
+  created_at: string;
+}
+
+export const DocumentAnnotations: React.FC<{ documentId: string }> = ({ documentId }) => {
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [activeType, setActiveType] = useState<Annotation['type'] | null>(null);
+  const [selectedColor, setSelectedColor] = useState('#ffeb3b');
+  const [colorPickerAnchor, setColorPickerAnchor] = useState<null | HTMLElement>(null);
+  const [editingAnnotation, setEditingAnnotation] = useState<Annotation | null>(null);
+  const [newComment, setNewComment] = useState('');
+  const canvasRef = useRef<fabric.Canvas | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { socket } = useWebSocket();
+
+  useEffect(() => {
+    if (containerRef.current) {
+      canvasRef.current = new fabric.Canvas('annotationCanvas', {
+        isDrawingMode: false,
+      });
+
+      // Ajusta o tamanho do canvas
+      const resizeCanvas = () => {
+        if (canvasRef.current && containerRef.current) {
+          canvasRef.current.setDimensions({
+            width: containerRef.current.offsetWidth,
+            height: containerRef.current.offsetHeight,
+          });
+        }
+      };
+
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+
+      return () => {
+        window.removeEventListener('resize', resizeCanvas);
+        canvasRef.current?.dispose();
+      };
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAnnotations();
+
+    // Escuta eventos de anotações em tempo real
+    if (socket) {
+      socket.on('annotation-added', handleAnnotationAdded);
+      socket.on('annotation-updated', handleAnnotationUpdated);
+      socket.on('annotation-deleted', handleAnnotationDeleted);
+
+      return () => {
+        socket.off('annotation-added');
+        socket.off('annotation-updated');
+        socket.off('annotation-deleted');
+      };
+    }
+  }, [documentId, socket]);
+
+  const loadAnnotations = async () => {
+    try {
+      const response = await api.get(`/documents/${documentId}/annotations`);
+      setAnnotations(response.data);
+      renderAnnotations(response.data);
+    } catch (error) {
+      console.error('Error loading annotations:', error);
+    }
+  };
+
+  const renderAnnotations = (annotations: Annotation[]) => {
+    if (!canvasRef.current) return;
+
+    canvasRef.current.clear();
+
+    annotations.forEach((annotation) => {
+      if (annotation.type === 'drawing') {
+        const path = new fabric.Path(annotation.position.path, {
+          stroke: annotation.color,
+          fill: 'transparent',
+          strokeWidth: 2,
+          selectable: false,
+        });
+        canvasRef.current?.add(path);
+      }
+    });
+
+    canvasRef.current.renderAll();
+  };
+
+  const handleToolSelect = (type: Annotation['type']) => {
+    setActiveType(type);
+
+    if (canvasRef.current) {
+      if (type === 'drawing') {
+        canvasRef.current.isDrawingMode = true;
+        canvasRef.current.freeDrawingBrush.color = selectedColor;
+        canvasRef.current.freeDrawingBrush.width = 2;
+      } else {
+        canvasRef.current.isDrawingMode = false;
+      }
+    }
+  };
+
+  const handleColorChange = (color: any) => {
+    setSelectedColor(color.hex);
+    if (canvasRef.current?.isDrawingMode) {
+      canvasRef.current.freeDrawingBrush.color = color.hex;
+    }
+  };
+
+  const handleAnnotationAdded = (annotation: Annotation) => {
+    setAnnotations((prev) => [...prev, annotation]);
+    renderAnnotations([...annotations, annotation]);
+  };
+
+  const handleAnnotationUpdated = (updatedAnnotation: Annotation) => {
+    setAnnotations((prev) =>
+      prev.map((ann) =>
+        ann.id === updatedAnnotation.id ? updatedAnnotation : ann
+      )
+    );
+    renderAnnotations(
+      annotations.map((ann) =>
+        ann.id === updatedAnnotation.id ? updatedAnnotation : ann
+      )
+    );
+  };
+
+  const handleAnnotationDeleted = (annotationId: string) => {
+    setAnnotations((prev) => prev.filter((ann) => ann.id !== annotationId));
+    renderAnnotations(annotations.filter((ann) => ann.id !== annotationId));
+  };
+
+  const handleSaveAnnotation = async () => {
+    if (!activeType) return;
+
+    try {
+      let annotationData: Partial<Annotation>;
+
+      if (activeType === 'drawing') {
+        const path = canvasRef.current?.toJSON().objects.pop();
+        annotationData = {
+          type: 'drawing',
+          position: { path },
+          color: selectedColor,
+        };
+      } else if (activeType === 'comment') {
+        annotationData = {
+          type: 'comment',
+          content: newComment,
+          position: {
+            x: Math.random() * (containerRef.current?.offsetWidth || 500),
+            y: Math.random() * (containerRef.current?.offsetHeight || 500),
+          },
+          color: selectedColor,
+        };
+      }
+
+      const response = await api.post(`/documents/${documentId}/annotations`, annotationData);
+      
+      if (socket) {
+        socket.emit('annotation-added', response.data);
+      }
+
+      setNewComment('');
+      setActiveType(null);
+    } catch (error) {
+      console.error('Error saving annotation:', error);
+    }
+  };
+
+  return (
+    <Box ref={containerRef} sx={{ position: 'relative', height: '100%' }}>
+      <canvas id="annotationCanvas" />
+
+      <Paper
+        sx={{
+          position: 'absolute',
+          top: 16,
+          right: 16,
+          p: 
