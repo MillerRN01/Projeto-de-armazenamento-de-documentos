@@ -1,0 +1,361 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TablePagination,
+  IconButton,
+  Tooltip,
+  Chip,
+  TextField,
+  InputAdornment,
+  Typography,
+  Button,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+} from '@mui/material';
+import {
+  Visibility as ViewIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Search as SearchIcon,
+  FilterList as FilterIcon,
+  Sort as SortIcon,
+  Download as DownloadIcon,
+  Share as ShareIcon,
+} from '@mui/icons-material';
+import { format } from 'date-fns';
+import api from '../../services/api';
+import { useSnackbar } from 'notistack';
+import { DocumentUploadDialog } from './DocumentUploadDialog';
+import { ConfirmDialog } from '../Common/ConfirmDialog';
+
+interface Document {
+  id: number;
+  title: string;
+  category: string;
+  created_at: string;
+  updated_at: string;
+  status: string;
+  file_size: number;
+  created_by: string;
+}
+
+export const DocumentList: React.FC = () => {
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+  const [search, setSearch] = useState('');
+  const [filterAnchorEl, setFilterAnchorEl] = useState<null | HTMLElement>(null);
+  const [sortAnchorEl, setSortAnchorEl] = useState<null | HTMLElement>(null);
+  const [selectedFilter, setSelectedFilter] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState<string>('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
+  const { enqueueSnackbar } = useSnackbar();
+
+  useEffect(() => {
+    loadDocuments();
+  }, [page, rowsPerPage, search, selectedFilter, sortBy, sortOrder]);
+
+  const loadDocuments = async () => {
+    try {
+      const response = await api.get('/documents', {
+        params: {
+          page,
+          limit: rowsPerPage,
+          search,
+          filters: selectedFilter,
+          sort_by: sortBy,
+          sort_order: sortOrder,
+        },
+      });
+      setDocuments(response.data.documents);
+      setTotalCount(response.data.total);
+    } catch (error) {
+      enqueueSnackbar('Error loading documents', { variant: 'error' });
+    }
+  };
+
+  const handleChangePage = (event: unknown, newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearch(event.target.value);
+    setPage(0);
+  };
+
+  const handleFilterClick = (event: React.MouseEvent<HTMLElement>) => {
+    setFilterAnchorEl(event.currentTarget);
+  };
+
+  const handleFilterClose = () => {
+    setFilterAnchorEl(null);
+  };
+
+  const handleSortClick = (event: React.MouseEvent<HTMLElement>) => {
+    setSortAnchorEl(event.currentTarget);
+  };
+
+  const handleSortClose = () => {
+    setSortAnchorEl(null);
+  };
+
+  const handleFilterSelect = (filter: string) => {
+    if (selectedFilter.includes(filter)) {
+      setSelectedFilter(selectedFilter.filter(f => f !== filter));
+    } else {
+      setSelectedFilter([...selectedFilter, filter]);
+    }
+  };
+
+  const handleSortSelect = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+    handleSortClose();
+  };
+
+  const handleUploadSuccess = () => {
+    setUploadDialogOpen(false);
+    loadDocuments();
+    enqueueSnackbar('Document uploaded successfully', { variant: 'success' });
+  };
+
+  const handleDelete = async () => {
+    if (!selectedDocument) return;
+
+    try {
+      await api.delete(`/documents/${selectedDocument.id}`);
+      loadDocuments();
+      setDeleteDialogOpen(false);
+      enqueueSnackbar('Document deleted successfully', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar('Error deleting document', { variant: 'error' });
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  return (
+    <Box>
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Typography variant="h5">Documents</Typography>
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={() => setUploadDialogOpen(true)}
+        >
+          Upload Document
+        </Button>
+      </Box>
+
+      <Paper sx={{ mb: 2, p: 2 }}>
+        <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+          <TextField
+            placeholder="Search documents..."
+            variant="outlined"
+            size="small"
+            fullWidth
+            value={search}
+            onChange={handleSearchChange}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+          />
+
+          <Tooltip title="Filter">
+            <IconButton onClick={handleFilterClick}>
+              <FilterIcon />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title="Sort">
+            <IconButton onClick={handleSortClick}>
+              <SortIcon />
+            </IconButton>
+          </Tooltip>
+        </Box>
+
+        {selectedFilter.length > 0 && (
+          <Box sx={{ mb: 2 }}>
+            {selectedFilter.map((filter) => (
+              <Chip
+                key={filter}
+                label={filter}
+                onDelete={() => handleFilterSelect(filter)}
+                sx={{ mr: 1 }}
+              />
+            ))}
+          </Box>
+        )}
+
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Title</TableCell>
+                <TableCell>Category</TableCell>
+                <TableCell>Created</TableCell>
+                <TableCell>Size</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Created By</TableCell>
+                <TableCell align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {documents.map((document) => (
+                <TableRow key={document.id}>
+                  <TableCell>{document.title}</TableCell>
+                  <TableCell>
+                    <Chip label={document.category} size="small" />
+                  </TableCell>
+                  <TableCell>
+                    {format(new Date(document.created_at), 'dd/MM/yyyy HH:mm')}
+                  </TableCell>
+                  <TableCell>{formatFileSize(document.file_size)}</TableCell>
+                  <TableCell>
+                    <Chip
+                      label={document.status}
+                      color={
+                        document.status === 'active' ? 'success' :
+                        document.status === 'pending' ? 'warning' : 'default'
+                      }
+                      size="small"
+                    />
+                  </TableCell>
+                  <TableCell>{document.created_by}</TableCell>
+                  <TableCell align="right">
+                    <Tooltip title="View">
+                      <IconButton size="small">
+                        <ViewIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Edit">
+                      <IconButton size="small">
+                        <EditIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Download">
+                      <IconButton size="small">
+                        <DownloadIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Share">
+                      <IconButton size="small">
+                        <ShareIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Delete">
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          setSelectedDocument(document);
+                          setDeleteDialogOpen(true);
+                        }}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        <TablePagination
+          component="div"
+          count={totalCount}
+          page={page}
+          onPageChange={handleChangePage}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={handleChangeRowsPerPage}
+        />
+      </Paper>
+
+      <Menu
+        anchorEl={filterAnchorEl}
+        open={Boolean(filterAnchorEl)}
+        onClose={handleFilterClose}
+      >
+        <MenuItem onClick={() => handleFilterSelect('active')}>
+          <ListItemIcon>
+            <Chip label="Active" size="small" color="success" />
+          </ListItemIcon>
+          Active Documents
+        </MenuItem>
+        <MenuItem onClick={() => handleFilterSelect('pending')}>
+          <ListItemIcon>
+            <Chip label="Pending" size="small" color="warning" />
+          </ListItemIcon>
+          Pending Review
+        </MenuItem>
+        <MenuItem onClick={() => handleFilterSelect('archived')}>
+          <ListItemIcon>
+            <Chip label="Archived" size="small" />
+          </ListItemIcon>
+          Archived
+        </MenuItem>
+      </Menu>
+
+      <Menu
+        anchorEl={sortAnchorEl}
+        open={Boolean(sortAnchorEl)}
+        onClose={handleSortClose}
+      >
+        <MenuItem onClick={() => handleSortSelect('title')}>
+          Title {sortBy === 'title' && (sortOrder === 'asc' ? '↑' : '↓')}
+        </MenuItem>
+        <MenuItem onClick={() => handleSortSelect('created_at')}>
+          Created Date {sortBy === 'created_at' && (sortOrder === 'asc' ? '↑' : '↓')}
+        </MenuItem>
+        <MenuItem onClick={() => handleSortSelect('file_size')}>
+          File Size {sortBy === 'file_size' && (sortOrder === 'asc' ? '↑' : '↓')}
+        </MenuItem>
+      </Menu>
+
+      <DocumentUploadDialog
+        open={uploadDialogOpen}
+        onClose={() => setUploadDialogOpen(false)}
+        onSuccess={handleUploadSuccess}
+      />
+
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        title="Delete Document"
+        content="Are you sure you want to delete this document? This action cannot be undone."
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteDialogOpen(false)}
+      />
+    </Box>
+  );
+};
