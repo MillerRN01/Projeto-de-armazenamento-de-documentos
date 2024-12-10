@@ -1,0 +1,212 @@
+import { Server, Socket } from 'socket.io';
+import { Server as HttpServer } from 'http';
+import jwt from 'jsonwebtoken';
+import { config } from '../config/environment';
+
+interface SocketUser {
+  id: number;
+  username: string;
+}
+
+interface SocketData {
+  user: SocketUser;
+}
+
+export class WebSocketService {
+  private static io: Server;
+  private static activeUsers: Map<string, Set<string>> = new Map();
+  private static userSockets: Map<number, Set<string>> = new Map();
+
+  /**
+   * Inicializa o serviço de WebSocket
+   * @param server Servidor HTTP
+   */
+  static initialize(server: HttpServer) {
+    this.io = new Server(server, {
+      cors: {
+        origin: process.env.FRONTEND_URL,
+        methods: ['GET', 'POST'],
+        credentials: true
+      }
+    });
+
+    this.setupMiddleware();
+    this.setupEventHandlers();
+  }
+
+  /**
+   * Configura middleware de autenticação
+   */
+  private static setupMiddleware() {
+    this.io.use((socket, next) => {
+      const token = socket.handshake.auth.token;
+      if (!token) {
+        return next(new Error('Authentication error'));
+      }
+
+      try {
+        const decoded = jwt.verify(token, config.JWT_SECRET) as SocketUser;
+        socket.data = { user: decoded };
+        next();
+      } catch (error) {
+        next(new Error('Authentication error'));
+      }
+    });
+  }
+
+  /**
+   * Configura handlers de eventos
+   */
+  private static setupEventHandlers() {
+    this.io.on('connection', (socket: Socket & { data: SocketData }) => {
+      console.log('User connected:', socket.data.user.username);
+
+      this.handleUserConnection(socket);
+
+      socket.on('join-document', (documentId: string) => {
+        this.handleJoinDocument(socket, documentId);
+      });
+
+      socket.on('leave-document', (documentId: string) => {
+        this.handleLeaveDocument(socket, documentId);
+      });
+
+      socket.on('document-change', (data: any) => {
+        this.handleDocumentChange(socket, data);
+      });
+
+      socket.on('disconnect', () => {
+        this.handleDisconnect(socket);
+      });
+    });
+  }
+
+  /**
+   * Gerencia conexão de usuário
+   */
+  private static handleUserConnection(socket: Socket & { data: SocketData }) {
+    const userId = socket.data.user.id;
+    
+    if (!this.userSockets.has(userId)) {
+      this.userSockets.set(userId, new Set());
+    }
+    this.userSockets.get(userId)!.add(socket.id);
+    
+    // Notifica outros usuários
+    this.broadcastUserStatus(userId, true);
+  }
+
+  /**
+   * Gerencia entrada em documento
+   */
+  private static handleJoinDocument(
+    socket: Socket & { data: SocketData },
+    documentId: string
+  ) {
+    socket.join(`document:${documentId}`);
+    
+    if (!this.activeUsers.has(documentId)) {
+      this.activeUsers.set(documentId, new Set());
+    }
+    this.activeUsers.get(documentId)!.add(socket.data.user.id.toString());
+    
+    this.broadcastActiveUsers(documentId);
+  }
+
+  /**
+   * Gerencia saída de documento
+   */
+  private static handleLeaveDocument(
+    socket: Socket & { data: SocketData },
+    documentId: string
+  ) {
+    socket.leave(`document:${documentId}`);
+    
+    const documentUsers = this.activeUsers.get(documentId);
+    if (documentUsers) {
+      documentUsers.delete(socket.data.user.id.toString());
+      if (documentUsers.size === 0) {
+        this.activeUsers.delete(documentId);
+      }
+    }
+    
+    this.broadcastActiveUsers(documentId);
+  }
+
+  /**
+   * Gerencia mudanças em documento
+   */
+  private static handleDocumentChange(
+    socket: Socket & { data: SocketData },
+    data: any
+  ) {
+    socket.to(`document:${data.documentId}`).emit('document-changed', {
+      ...data,
+      user: socket.data.user
+    });
+  }
+
+  /**
+   * Gerencia desconexão de usuário
+   */
+  private static handleDisconnect(socket: Socket & { data: SocketData }) {
+    const userId = socket.data.user.id;
+    
+    // Remove socket da lista de sockets do usuário
+    const userSockets = this.userSockets.get(userId);
+    if (userSockets) {
+      userSockets.delete(socket.id);
+      if (userSockets.size === 0) {
+        this.userSockets.delete(userId);
+        this.broadcastUserStatus(userId, false);
+      }
+    }
+    
+    // Remove usuário de documentos ativos
+    for (const [documentId, users] of this.activeUsers.entries()) {
+      if (users.has(userId.toString())) {
+        users.delete(userId.toString());
+        if (users.size === 0) {
+          this.activeUsers.delete(documentId);
+        }
+        this.broadcastActiveUsers(documentId);
+      }
+    }
+  }
+
+  /**
+   * Notifica criação de documento
+   */
+  static notifyDocumentCreated(document: any) {
+    this.io.emit('document-created', document);
+  }
+
+  /**
+   * Notifica atualização de documento
+   */
+  static notifyDocumentUpdated(document: any) {
+    this.io.to(`document:${document.id}`).emit('document-updated', document);
+  }
+
+  /**
+   * Notifica exclusão de documento
+   */
+  static notifyDocumentDeleted(documentId: number) {
+    this.io.to(`document:${documentId}`).emit('document-deleted', { id: documentId });
+  }
+
+  /**
+   * Transmite lista de usuários ativos em um documento
+   */
+  private static broadcastActiveUsers(documentId: string) {
+    const users = Array.from(this.activeUsers.get(documentId) || []);
+    this.io.to(`document:${documentId}`).emit('active-users', users);
+  }
+
+  /**
+   * Transmite status de usuário
+   */
+  private static broadcastUserStatus(userId: number, online: boolean) {
+    this.io.emit('user-status', { userId, online });
+  }
+}
