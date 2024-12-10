@@ -1,0 +1,274 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Typography,
+  TextField,
+  Button,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemAvatar,
+  Avatar,
+  IconButton,
+  Menu,
+  MenuItem,
+  Divider,
+} from '@mui/material';
+import {
+  MoreVert as MoreIcon,
+  Send as SendIcon,
+} from '@mui/icons-material';
+import { useAuth } from '../../contexts/AuthContext';
+import api from '../../services/api';
+import { useWebSocket } from '../../hooks/useWebSocket';
+
+interface Comment {
+  id: string;
+  content: string;
+  created_by: {
+    id: number;
+    username: string;
+  };
+  created_at: string;
+  replies?: Comment[];
+}
+
+export const DocumentComments: React.FC<{ documentId: string }> = ({ documentId }) => {
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [replyTo, setReplyTo] = useState<Comment | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const [selectedComment, setSelectedComment] = useState<Comment | null>(null);
+  const { user } = useAuth();
+  const { socket } = useWebSocket();
+
+  useEffect(() => {
+    loadComments();
+
+    if (socket) {
+      socket.on('comment-added', handleCommentAdded);
+      socket.on('comment-updated', handleCommentUpdated);
+      socket.on('comment-deleted', handleCommentDeleted);
+
+      return () => {
+        socket.off('comment-added');
+        socket.off('comment-updated');
+        socket.off('comment-deleted');
+      };
+    }
+  }, [documentId, socket]);
+
+  const loadComments = async () => {
+    try {
+      const response = await api.get(`/documents/${documentId}/comments`);
+      setComments(response.data);
+    } catch (error) {
+      console.error('Error loading comments:', error);
+    }
+  };
+
+  const handleCommentSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    
+    if (!newComment.trim()) return;
+
+    try {
+      const response = await api.post(`/documents/${documentId}/comments`, {
+        content: newComment,
+        parent_id: replyTo?.id,
+      });
+
+      if (socket) {
+        socket.emit('comment-added', response.data);
+      }
+
+      setNewComment('');
+      setReplyTo(null);
+    } catch (error) {
+      console.error('Error adding comment:', error);
+    }
+  };
+
+  const handleCommentDelete = async (commentId: string) => {
+    try {
+      await api.delete(`/documents/${documentId}/comments/${commentId}`);
+      
+      if (socket) {
+        socket.emit('comment-deleted', commentId);
+      }
+
+      setMenuAnchor(null);
+      setSelectedComment(null);
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+    }
+  };
+
+  const handleCommentAdded = (comment: Comment) => {
+    if (comment.replies) {
+      setComments((prev) =>
+        prev.map((c) =>
+          c.id === comment.replies![0].id
+            ? { ...c, replies: [...(c.replies || []), comment] }
+            : c
+        )
+      );
+    } else {
+      setComments((prev) => [...prev, comment]);
+    }
+  };
+
+  const handleCommentUpdated = (updatedComment: Comment) => {
+    setComments((prev) =>
+      prev.map((comment) =>
+        comment.id === updatedComment.id ? updatedComment : comment
+      )
+    );
+  };
+
+  const handleCommentDeleted = (commentId: string) => {
+    setComments((prev) => prev.filter((comment) => comment.id !== commentId));
+  };
+
+  const renderComment = (comment: Comment, isReply = false) => (
+    <ListItem
+      key={comment.id}
+      alignItems="flex-start"
+      sx={{
+        pl: isReply ? 4 : 2,
+        backgroundColor: isReply ? 'rgba(0, 0, 0, 0.02)' : 'transparent',
+      }}
+    >
+      <ListItemAvatar>
+        <Avatar>
+          {comment.created_by.username[0].toUpperCase()}
+        </Avatar>
+      </ListItemAvatar>
+      
+      <ListItemText
+        primary={
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="subtitle2">
+              {comment.created_by.username}
+            </Typography>
+            <Typography variant="caption" color="textSecondary">
+              {new Date(comment.created_at).toLocaleString()}
+            </Typography>
+          </Box>
+        }
+        secondary={
+          <>
+            <Typography
+              variant="body2"
+              color="textPrimary"
+              sx={{ mt: 1, mb: 1 }}
+            >
+              {comment.content}
+            </Typography>
+            <Button
+              size="small"
+              onClick={() => setReplyTo(comment)}
+              sx={{ mt: 1 }}
+            >
+              Reply
+            </Button>
+          </>
+        }
+      />
+
+      {user?.id === comment.created_by.id && (
+        <IconButton
+          size="small"
+          onClick={(event) => {
+            setMenuAnchor(event.currentTarget);
+            setSelectedComment(comment);
+          }}
+        >
+          <MoreIcon />
+        </IconButton>
+      )}
+    </ListItem>
+  );
+
+  return (
+    <Box>
+      <List disablePadding>
+        {comments.map((comment) => (
+          <React.Fragment key={comment.id}>
+            {renderComment(comment)}
+            {comment.replies?.map((reply) => renderComment(reply, true))}
+          </React.Fragment>
+        ))}
+      </List>
+
+      <Divider sx={{ my: 2 }} />
+
+      <Box
+        component="form"
+        onSubmit={handleCommentSubmit}
+        sx={{ p: 2, backgroundColor: 'background.paper' }}
+      >
+        {replyTo && (
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="caption" color="textSecondary">
+              Replying to {replyTo.created_by.username}
+            </Typography>
+            <IconButton
+              size="small"
+              onClick={() => setReplyTo(null)}
+              sx={{ ml: 1 }}
+            >
+              ×
+            </IconButton>
+          </Box>
+        )}
+
+        <TextField
+          fullWidth
+          multiline
+          rows={3}
+          placeholder={
+            replyTo
+              ? `Reply to ${replyTo.created_by.username}...`
+              : 'Add a comment...'
+          }
+          value={newComment}
+          onChange={(e) => setNewComment(e.target.value)}
+          variant="outlined"
+          size="small"
+        />
+
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={!newComment.trim()}
+            endIcon={<SendIcon />}
+          >
+            {replyTo ? 'Reply' : 'Comment'}
+          </Button>
+        </Box>
+      </Box>
+
+      <Menu
+        anchorEl={menuAnchor}
+        open={Boolean(menuAnchor)}
+        onClose={() => {
+          setMenuAnchor(null);
+          setSelectedComment(null);
+        }}
+      >
+        <MenuItem
+          onClick={() => {
+            if (selectedComment) {
+              handleCommentDelete(selectedComment.id);
+            }
+          }}
+          sx={{ color: 'error.main' }}
+        >
+          Delete
+        </MenuItem>
+      </Menu>
+    </Box>
+  );
+};
