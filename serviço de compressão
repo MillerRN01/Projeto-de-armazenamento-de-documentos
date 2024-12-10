@@ -1,0 +1,155 @@
+import zlib from 'zlib';
+import { promisify } from 'util';
+import { pipeline } from 'stream';
+import { createReadStream, createWriteStream } from 'fs';
+import { join } from 'path';
+
+export class CompressionService {
+  private static readonly gzip = promisify(zlib.gzip);
+  private static readonly gunzip = promisify(zlib.gunzip);
+  private static readonly pipe = promisify(pipeline);
+
+  /**
+   * Comprime dados em memória
+   * @param data Dados a serem comprimidos
+   * @param level Nível de compressão (1-9)
+   */
+  static async compress(
+    data: Buffer,
+    level: number = 6
+  ): Promise<Buffer> {
+    try {
+      return await this.gzip(data, { level });
+    } catch (error) {
+      console.error('Compression error:', error);
+      throw new Error('Failed to compress data');
+    }
+  }
+
+  /**
+   * Descomprime dados em memória
+   * @param compressedData Dados comprimidos
+   */
+  static async decompress(compressedData: Buffer): Promise<Buffer> {
+    try {
+      return await this.gunzip(compressedData);
+    } catch (error) {
+      console.error('Decompression error:', error);
+      throw new Error('Failed to decompress data');
+    }
+  }
+
+  /**
+   * Comprime arquivo
+   * @param inputPath Caminho do arquivo de entrada
+   * @param outputPath Caminho do arquivo de saída
+   */
+  static async compressFile(
+    inputPath: string,
+    outputPath?: string
+  ): Promise<string> {
+    try {
+      const finalOutputPath = outputPath || `${inputPath}.gz`;
+      
+      await this.pipe(
+        createReadStream(inputPath),
+        zlib.createGzip({
+          level: 9,
+          memLevel: 9
+        }),
+        createWriteStream(finalOutputPath)
+      );
+
+      return finalOutputPath;
+    } catch (error) {
+      console.error('File compression error:', error);
+      throw new Error('Failed to compress file');
+    }
+  }
+
+  /**
+   * Descomprime arquivo
+   * @param inputPath Caminho do arquivo comprimido
+   * @param outputPath Caminho do arquivo de saída
+   */
+  static async decompressFile(
+    inputPath: string,
+    outputPath?: string
+  ): Promise<string> {
+    try {
+      const finalOutputPath = outputPath || inputPath.replace('.gz', '');
+      
+      await this.pipe(
+        createReadStream(inputPath),
+        zlib.createGunzip(),
+        createWriteStream(finalOutputPath)
+      );
+
+      return finalOutputPath;
+    } catch (error) {
+      console.error('File decompression error:', error);
+      throw new Error('Failed to decompress file');
+    }
+  }
+
+  /**
+   * Comprime dados com metadados
+   * @param data Dados a serem comprimidos
+   * @param metadata Metadados a serem incluídos
+   */
+  static async compressWithMetadata(
+    data: Buffer,
+    metadata: any
+  ): Promise<Buffer> {
+    try {
+      // Converte metadados para buffer
+      const metadataBuffer = Buffer.from(JSON.stringify(metadata));
+      
+      // Cria buffer para tamanho dos metadados (4 bytes)
+      const metadataLength = Buffer.alloc(4);
+      metadataLength.writeUInt32BE(metadataBuffer.length);
+      
+      // Comprime os dados
+      const compressedData = await this.compress(data);
+      
+      // Combina todos os componentes
+      return Buffer.concat([
+        metadataLength,   // Tamanho dos metadados
+        metadataBuffer,   // Metadados
+        compressedData    // Dados comprimidos
+      ]);
+    } catch (error) {
+      console.error('Compression with metadata error:', error);
+      throw new Error('Failed to compress data with metadata');
+    }
+  }
+
+  /**
+   * Descomprime dados com metadados
+   * @param data Dados comprimidos com metadados
+   */
+  static async decompressWithMetadata(
+    data: Buffer
+  ): Promise<{ data: Buffer; metadata: any }> {
+    try {
+      // Lê o tamanho dos metadados
+      const metadataLength = data.readUInt32BE(0);
+      
+      // Extrai e parse os metadados
+      const metadataBuffer = data.slice(4, 4 + metadataLength);
+      const metadata = JSON.parse(metadataBuffer.toString());
+      
+      // Extrai e descomprime os dados
+      const compressedData = data.slice(4 + metadataLength);
+      const decompressedData = await this.decompress(compressedData);
+      
+      return {
+        data: decompressedData,
+        metadata
+      };
+    } catch (error) {
+      console.error('Decompression with metadata error:', error);
+      throw new Error('Failed to decompress data with metadata');
+    }
+  }
+}
