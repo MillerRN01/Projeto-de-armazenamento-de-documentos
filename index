@@ -1,0 +1,72 @@
+// Interfaces que definem os tipos de dados usados no sistema
+
+// Interface para usuário
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  password: string;
+  role: 'admin' | 'user';
+  created_at: Date;
+  updated_at: Date;
+}
+
+// Interface para categoria
+export interface Category {
+  id: number;
+  name: string;
+  description?: string;
+  color: string;
+  parent_id?: number;
+  is_favorite: boolean;
+  created_by: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// Interface para documento
+export interface Document {
+  id: number;
+  title: string;
+  description?: string;
+  file_path: string;
+  file_hash: string;
+  category_id: number;
+  metadata: DocumentMetadata;
+  created_by: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// Interface para metadados do documento
+export interface DocumentMetadata {
+  fileSize: number;
+  mimeType: string;
+  pageCount?: number;
+  wordCount?: number;
+  languages?: string[];
+  ocr_text?: string;
+  tags?: string[];
+}
+
+// Interface para anotação
+export interface Annotation {
+  id: number;
+  document_id: number;
+  user_id: number;
+  type: 'highlight' | 'note' | 'drawing';
+  content?: string;
+  position: any;
+  color: string;
+  created_at: Date;
+}
+
+// Interface para workflow
+export interface Workflow {
+  id: number;
+  document_id: number;
+  status: 'pending' | 'approved' | 'rejected';
+  current_step: number;
+  created_by: number;
+  created_at: Date;
+}
