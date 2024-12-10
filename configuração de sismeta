@@ -1,0 +1,213 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Paper,
+  Typography,
+  Box,
+  TextField,
+  Switch,
+  FormControlLabel,
+  Button,
+  Grid,
+  Divider,
+  Alert,
+} from '@mui/material';
+import { Save as SaveIcon } from '@mui/icons-material';
+import api from '../../services/api';
+import { useSnackbar } from 'notistack';
+
+interface SystemSettings {
+  maxFileSize: number;
+  allowedFileTypes: string[];
+  autoBackupEnabled: boolean;
+  backupInterval: number;
+  storageLimit: number;
+  emailNotifications: boolean;
+  defaultPermissions: string[];
+  maintenanceMode: boolean;
+}
+
+export const SystemSettings: React.FC = () => {
+  const [settings, setSettings] = useState<SystemSettings | null>(null);
+  const [loading, setLoading] = useState(false);
+  const { enqueueSnackbar } = useSnackbar();
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      const response = await api.get('/admin/settings');
+      setSettings(response.data);
+    } catch (error) {
+      console.error('Error loading settings:', error);
+      enqueueSnackbar('Error loading settings', { variant: 'error' });
+    }
+  };
+
+  const handleSave = async () => {
+    if (!settings) return;
+
+    setLoading(true);
+    try {
+      await api.put('/admin/settings', settings);
+      enqueueSnackbar('Settings saved successfully', { variant: 'success' });
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      enqueueSnackbar('Error saving settings', { variant: 'error' });
+    }
+    setLoading(false);
+  };
+
+  if (!settings) {
+    return null;
+  }
+
+  return (
+    <Paper sx={{ p: 3 }}>
+      <Typography variant="h6" gutterBottom>
+        System Settings
+      </Typography>
+
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={6}>
+          <TextField
+            fullWidth
+            label="Max File Size (MB)"
+            type="number"
+            value={settings.maxFileSize}
+            onChange={(e) =>
+              setSettings({ ...settings, maxFileSize: Number(e.target.value) })
+            }
+          />
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <TextField
+            fullWidth
+            label="Storage Limit (GB)"
+            type="number"
+            value={settings.storageLimit}
+            onChange={(e) =>
+              setSettings({ ...settings, storageLimit: Number(e.target.value) })
+            }
+          />
+        </Grid>
+
+        <Grid item xs={12}>
+          <TextField
+            fullWidth
+            label="Allowed File Types"
+            value={settings.allowedFileTypes.join(', ')}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                allowedFileTypes: e.target.value.split(',').map((t) => t.trim()),
+              })
+            }
+            helperText="Comma-separated list of file extensions"
+          />
+        </Grid>
+
+        <Grid item xs={12}>
+          <Divider sx={{ my: 2 }} />
+          <Typography variant="subtitle1" gutterBottom>
+            Backup Settings
+          </Typography>
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={settings.autoBackupEnabled}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    autoBackupEnabled: e.target.checked,
+                  })
+                }
+              />
+            }
+            label="Enable Automatic Backups"
+          />
+
+          {settings.autoBackupEnabled && (
+            <TextField
+              sx={{ mt: 2 }}
+              fullWidth
+              label="Backup Interval (hours)"
+              type="number"
+              value={settings.backupInterval}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  backupInterval: Number(e.target.value),
+                })
+              }
+            />
+          )}
+        </Grid>
+
+        <Grid item xs={12}>
+          <Divider sx={{ my: 2 }} />
+          <Typography variant="subtitle1" gutterBottom>
+            Notifications
+          </Typography>
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={settings.emailNotifications}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    emailNotifications: e.target.checked,
+                  })
+                }
+              />
+            }
+            label="Enable Email Notifications"
+          />
+        </Grid>
+
+        <Grid item xs={12}>
+          <Divider sx={{ my: 2 }} />
+          <Typography variant="subtitle1" gutterBottom>
+            System Status
+          </Typography>
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={settings.maintenanceMode}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    maintenanceMode: e.target.checked,
+                  })
+                }
+              />
+            }
+            label="Maintenance Mode"
+          />
+
+          {settings.maintenanceMode && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              System is in maintenance mode. Only administrators can access.
+            </Alert>
+          )}
+        </Grid>
+      </Grid>
+
+      <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
+        <Button
+          variant="contained"
+          startIcon={<SaveIcon />}
+          onClick={handleSave}
+          disabled={loading}
+        >
+          Save Settings
+        </Button>
+      </Box>
+    </Paper>
+  );
+};
