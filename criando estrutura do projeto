@@ -1,0 +1,23 @@
+# Criar diretório do projeto
+mkdir document-management-system
+cd document-management-system
+
+# Criar estrutura backend
+mkdir backend
+cd backend
+npm init -y
+
+# Instalar dependências do backend
+npm install express typescript ts-node @types/node @types/express pg @types/pg cors @types/cors dotenv jsonwebtoken @types/jsonwebtoken bcrypt @types/bcrypt multer @types/multer socket.io archiver node-cron googleapis dropbox @microsoft/onedrive-api tesseract.js pdf2image sharp
+
+# Configurar TypeScript
+npm install -D typescript @types/node ts-node nodemon
+npx tsc --init
+
+# Voltar para a raiz e criar frontend
+cd ..
+npx create-react-app frontend --template typescript
+
+# Instalar dependências do frontend
+cd frontend
+npm install @mui/material @mui/icons-material @emotion/react @emotion/styled axios react-router-dom @types/react-router-dom react-pdf react-diff-viewer react-beautiful-dnd @types/react-beautiful-dnd socket.io-client react-signature-pad-wrapper @peculiar/x509 @peculiar/webcrypto fabric react-color
